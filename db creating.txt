@@ -1,0 +1,13 @@
+sudo -u postgres psql
+
+CREATE DATABASE rbregister;
+CREATE USER rbuser WITH password 'pass';
+GRANT ALL privileges ON DATABASE rbregister TO rbuser;
+\q
+
+psql -h localhost rbregister rbuser
+
+CREATE TABLE register (reg_number INTEGER PRIMARY KEY, legal_entity_individual_entrepreneur_name VARCHAR(256), registering_authority VARCHAR(128), reg_date DATE, status VARCHAR(128), exclusion_date DATE NULL DEFAULT NULL);
+\q
+
+sudo service postgresql restart
