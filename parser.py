@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from grab import Grab
-from grab import error
+from grab import Grab, error
 import psycopg2
 import sys
 import datetime
@@ -10,12 +9,11 @@ class Parser:
 
 	connection = None # соединение с БД
 	cursor = None # курсор для взаимодействия с БД
-	g = None # объект grab
+	grabObject = None # объект grab
 	tblName = None # название таблицы
 	counter = None
 
-	def __init__(self, dataBaseName, dbUsername, hostname, userPass, tableName): # название базы, имя пользователя, хост, пароль, название таблицы 
-		# Конструктор
+	def __init__(self, dataBaseName, dbUsername, hostname, userPass, tableName):
 
 		try:
 
@@ -24,21 +22,21 @@ class Parser:
 
 			# Создаем курсор и проверяем наличие таблицы
 			self.cursor = self.connection.cursor()
-			self.cursor.execute("SELECT * FROM information_schema.tables WHERE table_name=%s", (tableName, ))
+			self.cursor.execute("SELECT * FROM information_schema.tables WHERE table_name = %s", (tableName, ))
 
-			if bool(self.cursor.rowcount == False):
-				print('table %s does not exist') % tableName
+			if self.cursor.rowcount == 0:
+				print u'Таблица %s не существует' % tableName
 				sys.exit(1)
 
 			self.tblName = tableName
 
-		except (psycopg2.DatabaseError):
-			print 'unable to connect to database'
+		except (psycopg2.DatabaseError) as dbError:
+			print 'Ошибка подключения к базе', dbError
 			sys.exit(1)
 
 		# Настраиваем grab
-		self.g = Grab(log_file = 'out.html')
-		self.g.setup(url = 'http://egr.gov.by/egrn/index.jsp?content=Find', connect_timeout = 30, timeout = 30)
+		self.grabObject = Grab(log_file = 'out.html')
+		self.grabObject.setup(url = 'http://egr.gov.by/egrn/index.jsp?content=Find', connect_timeout = 30, timeout = 30)
 
 
 	def loadPage(self, counter):
@@ -46,11 +44,19 @@ class Parser:
 
 		self.counter = counter
 		try:
-			self.g.setup(post = {'ngrn' : self.counter, 'vname' : '', 'fplace' : 'all', 'ftype' : 'in', 'fmax' : '20', 'txtInput' : ''})
-			self.g.request()
+			postParameters = dict(
+					ngrn = counter,
+					vname = '',
+					fplace = 'all',
+					ftype = 'in',
+					fmax = '20',
+					txtInput = '', )
 
-		except(error.GrabError):
-			print 'grab error'
+			self.grabObject.setup(post = postParameters)
+			self.grabObject.request()
+
+		except(error.GrabError) as gError:
+			print 'Ошибка в модуле grab ', gError
 			raise KeyboardInterrupt
 
 
@@ -60,7 +66,7 @@ class Parser:
 		dataList = []
 
 		try:
-			dataInTable = self.g.doc.select('//body/div[contains(@id, "content")]/div/table/tr')[1] # Поиск таблицы 
+			dataInTable = self.grabObject.doc.select('//body/div[contains(@id, "content")]/div/table/tr')[1] # Поиск таблицы 
 
 			# Извлечение данных из таблицы
 			dataList.append( dataInTable.select('.//td')[1].text() ) # Регистрационный номер
@@ -72,7 +78,7 @@ class Parser:
 				dataList.append( dataInTable.select('.//td')[2].text() )
 
 			dataList.append( dataInTable.select('.//td')[3].text() ) # Регистрирующий орган
-			dataList.append( datetime.datetime.strptime( dataInTable.select('.//td')[4].text(), "%d.%m.%Y").date() ) # Дата регистрации
+			dataList.append( datetime.datetime.strptime(dataInTable.select('.//td')[4].text(), "%d.%m.%Y").date() ) # Дата регистрации
 			dataList.append( dataInTable.select('.//td')[5].text() ) # Статус
 
 			exclusion_date = dataInTable.select('.//td')[6].text() # Дата исключения
@@ -88,6 +94,7 @@ class Parser:
 			return self.counter + 1
 
 		except (IndexError):
+			# Срабатывает при ненахождении html таблицы, то есть нет записи с таким регистрационным номером 
 			return self.counter + 1
 
 		except (psycopg2.IntegrityError):
@@ -104,7 +111,6 @@ class Parser:
 			return self.counter + 1
 
 	def __del__(self):
-		# Деструктор
 
 		if self.connection:
 			self.connection.close()
